@@ -1,151 +1,139 @@
 ---
 name: atomic-commits
-description: Review a messy Git working tree, preview intent-based groups, and create small Conventional Commits safely. Use when the user asks to split many pending changes into commits, organize Git history by feature/fix/refactor, review a commit plan, or dry-run a large set of changes. Git execution is restricted to git status, git diff, git add, and git commit -m.
+description: Autonomously turn a messy Git working tree into meaningful Conventional Commits. Infer intent, group coupled changes, handle mixed files and dependencies, stage and verify each commit, and finish without routine user intervention. Use when asked to commit pending work, clean up Git changes, split large changes into logical commits, or preview an atomic commit plan. Only git status, git diff, git add, and git commit -m may be executed.
 ---
 
 # Atomic Commits
 
-Turn a crowded working tree into a readable history of focused commits. **Infer intent from actual changes, not filenames.** Preserve user work and favor an uncommitted change over an incorrect commit.
+You are the user's **autonomous commit manager**. The user wants to develop without thinking about commit organization. Own the whole process: inspect, infer intent, group, stage, verify, commit, and report. The default outcome is **all safely committable changes committed**, not a long list of leftovers or questions.
 
-## Hard execution boundary
+**Core principle: semantic cohesion over file count.** A commit can span 20+ files if they implement one cohesive outcome. Never invent arbitrary size limits, make cosmetic micro-commits, or merge truly unrelated work only to get a clean working tree.
 
-Only the following Git command families may be executed:
+## Non-negotiable command boundary
 
-- `git status` (e.g. `git status --short`, `git status --porcelain=v1`)
-- `git diff` (e.g. `git diff`, `git diff --cached`, `git diff --stat`, `git diff --check`, `git diff --no-index` is **not** allowed because it can read arbitrary non-repository files; use normal repository diffs only)
-- `git add` (explicit paths, or `git add -p` for independently stageable hunks)
-- `git commit -m "type: description"` (exactly the `-m` option, one message)
+The only Git commands you may execute are:
 
-**Do not execute any other Git command**: no `reset`, `restore`, `stash`, `clean`, `show`, `log`, `push`, `pull`, `fetch`, `switch`, `checkout`, `branch`, `rebase`, `rm`, `ls-files`, `rev-parse`, or `apply`. No chained commands, shell scripts, pipelines, wrappers, aliases, secondary Git tools, or subprocesses that bypass this allowlist. Do not run tests, build commands, formatters, or source-modifying tools. Read-only source inspection through provided file-reading facilities is permitted; do not invoke arbitrary shell commands for it. Git hooks triggered by `git commit` may execute automatically; **do not intentionally bypass them** or claim that the four-command restriction also limits hook internals.
+- `git status` (including flags such as `--short`, `--porcelain=v1`)
+- `git diff` (including `--cached`, `--stat`, `--check`, and path restrictions)
+- `git add` (explicit paths, `-p` / `--patch`, and `-N` / `--intent-to-add` when appropriate)
+- `git commit -m "type: description"` (one `-m`, no other commit flags)
 
-Never use `git add .`, `git add -A`, `git add --all`, glob/wildcard staging, `git commit -a`, `--amend`, `--no-verify`, or Git configuration changes. For `git add`, supply named repository-relative paths after `--` to disambiguate flags. Interactive patch staging may use `git add -p -- path/to/file` **only if reliable human/agent interaction and review of each hunk is available**.
+No other Git commands: in particular no `reset`, `restore`, `stash`, `clean`, `show`, `log`, `push`, `pull`, `fetch`, `checkout`, `switch`, `rebase`, `rm`, `apply`, or `ls-files`. No shell command chains, wrappers, scripted Git alternatives, external staging tools, or arbitrary executables used to bypass this restriction. Do not run builds, tests, formatters, or source-modifying tools. Read-only examination of source files through the agent's provided file-reading facilities is allowed. Git hooks may run automatically during `git commit`; never bypass them and do not claim they are themselves restricted to these commands.
 
-Do not edit any code, config, or data file. Do not remove or revert user changes. No push is permitted.
+Never run `git add .`, `git add -A`, `git add --all`, wildcard/directory-wide staging, `git commit -a`, `--amend`, `--no-verify`, or configuration changes. Use explicit, reviewed file paths (`git add -- path/to/file`). For `git add -p`, require reliable interactive control and review each selected hunk; do not blindly accept prompts. Do not edit code, config, or data files, delete user work, or push.
 
-## Modes
+## Modes and autonomy
 
-Infer mode from the user's request; do not introduce a confirmation prompt just because a safe preview can be produced.
+- **Execute (default):** execute the entire commit workflow independently. Give a short proposed grouping, **do not wait for confirmation**, then commit all safe groups. Make routine judgment calls yourself.
+- **Dry run:** inspect and propose exact groups, order, flags, and residual work; do not execute `git add` or `git commit` (including `git add -N`).
+- **User-limited scope:** honor expressly specified paths/features; inspect the whole staged index for contamination, but don't commit unrelated work.
 
-- **Execute (default):** inspect, present a concise **commit plan preview**, then stage, verify, and commit each safe group autonomously. Pause only at unsafe/uncertain operations.
-- **Dry run / preview only:** inspect and present the commit plan, risk flags, dependencies, and leftovers, **without invoking `git add` or `git commit`**. Make it clear that no commit was created.
-- **Restricted scope:** if the user names specific features/paths, touch only that scope; still inspect the complete staged index before any commit to prevent accidental inclusion of out-of-scope work.
+**Do not ask the user to resolve ordinary ambiguity** about naming, grouping, file counts, or dependent changes. Resolve it using the rules below. Ask only when the safe outcome genuinely depends on missing information you cannot obtain with authorized inspection.
 
-A preview is a plain-text table/list in the agent response, **not** an interactive GUI. Do not promise confidence scores with spurious precision.
+## Decision policy: exhaust safe options before blocking
 
-## Commit quality
+Classify all pending changes by **behavior and intent**, not by directories or filenames. Always try the following in order:
 
-A commit captures **one independently understandable change**, potentially spanning UI, API, migrations, tests, and documentation. Group by behavior and reason for change, **not directory, file type, or an arbitrary maximum number of files**.
+1. **Independent group:** make a focused commit for a self-contained feature, fix, refactor, test, docs, or configuration change. Combine related changes across layers.
+2. **Patch split:** where a file contains separate unrelated edits, inspect its diff hunks and use controlled `git add -p -- path/to/file` to stage truly independent hunks. Verify the resulting entire staged diff.
+3. **Coupled-group fallback:** when separate changes share an inseparable hunk or require each other to make sense, analyze their dependency/intent relationship. If they form a coherent deliverable, **combine them into one commit**, even when it spans many files or multiple tightly coupled behaviors. Do not block merely because changes are coupled or a file is shared.
+4. **Connected-component grouping:** model inseparable work as a small dependency graph. Join groups connected by inseparable edits or functional prerequisites. Re-evaluate the merged group for a meaningful unifying purpose. Commit each cohesive connected component in dependency order; leave independent components separate.
+5. **Last-resort hold:** only preserve changes when they are genuinely unrelated yet inseparable, uninspectable, potentially sensitive, or there is a concrete staging/integrity risk. Explain the exact blocking path and reason, not a generic statement about 'mixed changes'. Continue committing any other safe groups.
 
-- Combine necessary cross-layer edits for the same feature.
-- Include supporting tests/docs with their implementation when they serve only that implementation.
-- Separate unrelated fixes, formatting, refactors, and new behavior where safely possible.
-- Sequence commits so prerequisites precede dependents; when an independent split would make intermediate commits misleading or obviously incomplete, treat the tightly coupled change as one unit.
-- Favor an honest larger cohesive commit over artificial micro-commits, but never combine unrelated work merely to finish everything.
+**Important:** a missing perfectly atomic split is not a failure. Prefer one honest, larger cohesive commit over 20 stranded files. Conversely, size alone does not justify mixing unrelated changes.
 
-### Mixed-file detection
+### Shared and mixed files
 
-A file can contain several features or a feature plus unrelated formatting. Inspect its diff at hunk level and label it **mixed** if distinct intents appear. Before planning:
+- Inspect each relevant hunk; do not assume a shared file belongs to just one feature.
+- Use `git add -p` if distinct intent is separable and reliably selectable; the `s` split option can help where supported. Do not use patch editing (`e`) when it would require hand-editing the code/patch or introduce uncertainty.
+- If split cannot be controlled, first check whether the whole file fits a coherent coupled group. If yes, stage it whole with that group.
+- If two genuinely unrelated changes occupy a single inseparable hunk, do not claim they are independent; leave the affected portion uncommitted rather than creating a misleading commit.
+- Renames, new/untracked files, deletions, binary files, and submodules need explicit review. For untracked files, inspect content through read-only file access; ordinary `git diff` doesn't show it. Do not use `git add -N` unless necessary for safe inspection of a known, non-sensitive file and you understand that it modifies index state; prefer direct read-only inspection.
 
-1. Check whether distinct changes are in separate, independently stageable hunks.
-2. Use `git add -p` only with reliable control of selections; verify the entire staged diff after selection.
-3. If unrelated edits share one inseparable hunk, **do not pretend partial staging works**. Leave that file (and any group requiring it) uncommitted unless all its changes genuinely form one coherent unit.
-4. If a file is partially staged, remember the remaining working-tree changes can later be staged only after verifying the previous commit. Never accidentally re-stage already committed intent.
-5. Renames, deletions, new files, submodules, binary changes, and generated files require extra caution because patch separation or inspection may not be possible with permitted tools. Leave them uncommitted if content and intent cannot be verified.
+### Pre-existing staged work
 
-## Conventional Commit messages
+Check both staged and unstaged diffs at entry. Do **not** reflexively stop just because something is staged: the user asked you to own commits.
 
-Use **English**, lowercase except proper nouns, format:
+- If the staged index is entirely reviewed, safe, within scope, and already forms **one cohesive commit**, you may commit that index directly with an appropriate message, then continue with unstaged work.
+- If pre-staged changes span unrelated groups or are contaminated by unsafe/out-of-scope content, **do not commit or add anything else**: with the allowlisted commands you cannot reliably unstage the index. Report the precise blocker. Never mix pre-staged unrelated changes into a commit.
+- If you cannot establish what is staged, stop rather than guessing.
+
+### Secrets and accidental files
+
+Never commit suspected tokens, private keys, passwords, `.env` contents, caches, build artifacts, local machine state, or unknown sensitive binaries. Check for secrets **inside otherwise normal source files**. A secret sharing an inseparable hunk with legitimate code blocks that hunk. Do not alter `.gitignore` or other files to work around this. If a file merely has a suggestive name but its inspected changes are clearly safe (e.g. `.env.example` with placeholders), use judgment rather than blanket exclusion.
+
+## Conventional Commit style
+
+Messages must be English, short, specific, and lowercase except proper nouns:
 
 `type: short imperative description`
 
-Accepted types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `style`, `chore`, `build`, `ci`.
+Allowed types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `style`, `chore`, `build`, `ci`.
 
 Examples:
 
-- `feat: add process monitoring screen`
+- `feat: add process monitoring dashboard`
 - `fix: prevent duplicate webhook notifications`
-- `refactor: extract external api rate limiter`
-- `perf: reduce conversation filtering latency`
-- `chore: configure sql server container`
+- `refactor: simplify external api rate limiting`
+- `feat: integrate device revocation and blocking flows`
 
-Prefer specific descriptions of roughly 3–8 words, without trailing periods. Avoid vague messages (`fix: stuff`, `chore: misc`) and file-name inventories. Do not use fabricated ticket IDs or scopes.
+Prefer approximately 3–8 descriptive words, no trailing period, no vague `misc` / `updates`. Use a broad but accurate description for a tightly coupled deliverable; never fabricate ticket IDs.
 
-## Procedure
+## Autonomous workflow
 
-### 1. Read the index and worktree first
+### 1. Inventory everything
 
-Run `git status --short`, `git diff --stat`, `git diff`, `git diff --cached --stat`, and `git diff --cached` (scope large diffs to specific paths as needed). Review untracked-file contents using read-only file inspection when available; untracked content **does not appear** in ordinary `git diff`. `git status` alone never establishes the safety of an untracked file.
+Run `git status --short`, `git diff --stat`, `git diff`, `git diff --cached --stat`, and `git diff --cached` (break huge output into scoped `git diff` calls). Inspect relevant untracked content with available read-only file access. Identify all tracked/untracked changes, the original staged index, possible secrets, and any changes you cannot inspect.
 
-**If the index is already staged at entry, do not stage or commit anything.** Show the pre-existing staged changes, explain that the four-command allowlist cannot safely unstage them, and request manual resolution or fresh instructions after the index is clean. The staged index belongs to the user, even when it looks coherent.
+### 2. Build the smallest useful set of cohesive commits
 
-Flag risks: `.env` and credential files, tokens/private keys, local settings, caches, generated build outputs, large unknown/binary files, potential secrets embedded in ordinary code, and unclear deletions. Do not stage suspected secrets, even when they sit beside legitimate changes in a file; if inseparable, leave the file alone.
+For each change, establish its purpose, what else it depends on, and whether it shares a mixed file/hunk. Group entire vertical features across frontend, backend, tests, and migrations. Apply the independent / patch / coupled-component fallback above **before** declaring something blocked. Order prerequisites before dependents; combine dependent changes if separating would create incomplete or misleading intermediate states. Don't overthink trivial naming and grouping choices.
 
-### 2. Analyze intent and dependencies
+### 3. Show concise preview, then act
 
-Read relevant diffs before grouping. Map each proposed group to:
-
-- An intent (`feat`, `fix`, `refactor`, etc.)
-- Exactly which **paths and, if needed, hunks** belong to it
-- Dependencies on other proposed groups
-- Potential risk or uncertainty
-- Leftover changes that cannot safely be committed
-
-Avoid treating a shared file as belonging wholly to one group if it contains unrelated changes. For new files, only include files whose contents you can actually inspect. Read diffs until the classification is evidence-based, not just a guess from naming.
-
-### 3. Display commit preview
-
-Before writing commits, show a compact plan like:
+Provide a short numbered list, e.g.:
 
 ```text
-Proposed commits (example)
-1. feat: add process monitoring screen — 6 files
-2. fix: prevent duplicate notifications — 3 files, 1 partial hunk
-3. refactor: extract rate limiting handler — 4 files
-
-Excluded: .env.local (sensitive); src/shared.ts (inseparable mixed changes)
-Order: #3 before #2 only if #2 depends on #3
-Mode: execute | dry-run
+Commit plan (execute)
+1. feat: add device revocation flow — 9 files
+2. feat: integrate uninstall and blocking controls — 14 files (coupled group)
+3. fix: correct assignee loading state — 3 files
+Excluded: .env.local — secret values
 ```
 
-Make it clear that file counts and group names are proposals until verified. The preview is **not permission to add unsafe files**. In execute mode continue after preview without requiring approval for confidently safe groups; in dry-run mode stop here.
+The preview is a status update, **not** a request for approval. Continue immediately in execute mode; in dry run stop without staging.
 
-### 4. Stage one group and verify
+### 4. Stage and inspect one complete group
 
-Stage whole, fully reviewed files via `git add -- path1 path2`. Stage separate hunks only via controlled `git add -p -- path`. Never stage a directory if it can include unreviewed content.
-
-Immediately run:
+Use `git add -- path1 path2` only on explicitly inspected files, or controlled `git add -p -- path` for independently selectable hunks. Before committing **every** group run:
 
 - `git diff --cached --stat`
 - `git diff --cached`
 - `git diff --cached --check`
 - `git status --short`
 
-Verify **every staged change** belongs to just the current group, contains no suspected secrets, and was not staged inadvertently. A whitespace warning requires inspection, not an automatic blanket refusal; if unclear, stop.
+Confirm the **complete staged diff** corresponds to this group, has no unexpected paths/changes or suspected secrets, and has a truthful commit message. A whitespace warning is a review signal, not an automatic hard stop.
 
-**Critical stop rule:** if staging does not match the plan, stop without committing. The allowed commands do not include a safe way to unstage a path/hunk. Never try a destructive workaround or run a forbidden command. Report precisely what is staged so the user can repair it manually.
+**If staging is wrong, STOP all further staging and commits.** The allowed commands provide no reliable general unstage/recovery operation. Do not improvise an unsafe workaround or quietly commit accidental content. State exactly what is staged and why manual repair is required.
 
-### 5. Commit, then check again
+### 5. Commit and repeat
 
-Only after exact verification execute `git commit -m "type: description"`. Inspect `git status --short` and `git diff --cached` after each commit before proceeding. If a hook fails, the index remains staged, the index changes unexpectedly, or a command has an unexpected side effect, **stop**; do not retry by circumventing hooks or rewriting history.
+Run `git commit -m "type: description"` only after successful review. Re-check `git status --short` and `git diff --cached` after every commit. Treat hook failures, unexpected staged edits, or other side effects as blockers; never bypass hooks. Continue through all other safe, independent groups until no eligible work remains. Do not stop after the first successful commit.
 
-If hooks modify files, treat them as fresh, unreviewed changes. Never assume success merely from the commit command being attempted. Continue group by group only while the staging index is understood and clean.
+### 6. Report with minimal friction
 
-### 6. Summary and leftovers
+Give a compact summary of completed commit messages and the remaining file count. If leftovers remain, name concrete paths and the **specific** problem plus what authorized action would unblock them. Avoid generic explanations about 'inseparable dependencies' when a coupled commit was possible. Don't ask for approval after the fact. Note that tests/builds were not executed under this skill and nothing was pushed.
 
-Report committed messages, concise intent, and what remains modified/untracked with reasons. Clearly distinguish **planned**, **committed**, **skipped**, and **blocked**. Mention that tests/builds were not run because this skill permits only Git commands. Never claim changes were pushed or validated by a test suite.
+## Success criteria
 
-## Safety rules at a glance
+- **Complete:** every inspectable, safe, eligible change has been committed into cohesive groups.
+- **Partial:** all safely separable/cohesive groups were committed; only specific genuine blockers remain.
+- **Blocked:** staging or safety constraints prevent even the next safe commit; report precisely why.
 
-- Protect all user work; never clean, reset, restore, or rewrite it.
-- A staged index that predates this skill is a hard stop.
-- Preview first; dry run is read-only.
-- Stage only inspected paths or controlled hunks; inspect the exact staged diff before every commit.
-- No automatic staging of unknown files or possible secrets.
-- When intent or atomic separation is uncertain, **leave it uncommitted** and explain why.
-- Remain within the four authorized Git command families, including on failures.
+Optimize for **hands-off completion with auditable history**, not maximum commit count and not maximum caution. The user should be able to say 'commit my work' and go back to coding.
 
-## Invocation examples
+## Examples
 
-- `Use $atomic-commits to group my pending changes into small commits by functionality.`
-- `Use $atomic-commits in dry-run mode. Show the proposed commits, but do not stage or commit.`
-- `Use $atomic-commits only for the notification feature; leave everything else untouched.`
+- `Use $atomic-commits to commit everything pending. Decide the groups yourself.`
+- `Use $atomic-commits in dry-run mode and show the commit plan.`
+- `Use $atomic-commits only for the notification feature.`
