@@ -125,3 +125,8 @@ perf: reduce conversation filtering latency
 - Unexpected staged changes or hook failures stop execution. The skill does not attempt to unstage files or bypass hooks.
 
 The final report distinguishes committed, skipped, and blocked work, and explains any leftovers. A successful run organizes Git history; it does not establish that the code passes tests.
+
+## License
+
+This project is licensed under the MIT License.
+See the [LICENSE](LICENSE) file for details.
