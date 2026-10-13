@@ -16,13 +16,13 @@
 
 ### Install from GitHub with `$skill-installer`
 
-Ask Codex to install the skill directly from its GitHub repository:
+Ask Codex to install the skill directly from the [GitHub repository](https://github.com/porfiriovitin/atomic-commits-skill):
 
 ```text
-Use $skill-installer to install the skill from https://github.com/<owner>/<repo>/tree/main/atomic-commits.
+Use $skill-installer to install the atomic-commits skill from https://github.com/porfiriovitin/atomic-commits-skill, using the atomic-commits directory.
 ```
 
-Replace `<owner>` and `<repo>` with the GitHub repository owner and name. If the repository uses a different branch, replace `main` as well. The URL should point to the `atomic-commits` directory containing `SKILL.md`.
+The `atomic-commits` directory contains the skill's `SKILL.md` file.
 
 The installer places the skill in `$CODEX_HOME/skills/atomic-commits` (by default, `~/.codex/skills/atomic-commits`). After installation, the skill is available on your next turn.
 
